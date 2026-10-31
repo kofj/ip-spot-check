@@ -59,9 +59,32 @@ func (s *Server) Router() *gin.Engine {
 func staticHandler(fsys fs.FS) http.Handler {
 	fileServer := http.StripPrefix("/static/", http.FileServer(http.FS(fsys)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", cacheControlFor(r.URL.Path))
-		fileServer.ServeHTTP(w, r)
+		sw := &cacheableWriter{ResponseWriter: w, cacheControl: cacheControlFor(r.URL.Path)}
+		fileServer.ServeHTTP(sw, r)
 	})
+}
+
+type cacheableWriter struct {
+	http.ResponseWriter
+	cacheControl string
+	wroteHeader  bool
+}
+
+func (w *cacheableWriter) WriteHeader(code int) {
+	if !w.wroteHeader {
+		w.wroteHeader = true
+		if code == http.StatusOK {
+			w.Header().Set("Cache-Control", w.cacheControl)
+		}
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *cacheableWriter) Write(b []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(b)
 }
 
 func (s *Server) index(c *gin.Context) {
@@ -70,9 +93,14 @@ func (s *Server) index(c *gin.Context) {
 }
 
 func (s *Server) report(c *gin.Context) {
+	addr := c.Param("addr")
+	if !looksLikeIP(addr) {
+		c.String(http.StatusNotFound, "not an ip: %s", addr)
+		return
+	}
 	c.Header("Cache-Control", "public, max-age=60, s-maxage=3600, stale-while-revalidate=86400")
 	c.Render(http.StatusOK, newRender(s.tmpl).Instance("report.html", gin.H{
-		"Addr": c.Param("addr"),
+		"Addr": addr,
 	}))
 }
 
@@ -87,7 +115,7 @@ func (s *Server) plain(c *gin.Context) {
 	c.String(http.StatusOK, "ip: %s\nqueried_at: %s\n", addr, time.Now().UTC().Format(time.RFC3339))
 }
 
-// 缺失资源由 http.FileServer 返回 404 并清除 Cache-Control，这是期望行为。
+// 只有 200 响应带缓存头；404 等错误响应不缓存，避免缺失的 hash 资源被长期记住。
 func cacheControlFor(path string) string {
 	if hashedAsset.MatchString(strings.TrimSuffix(path, "/")) {
 		return "public, max-age=31536000, immutable"

@@ -21,6 +21,11 @@
 - Go 版本从设计稿的 1.25 改为 1.26.0（依赖链要求），Taskfile 固定 `GOTOOLCHAIN`
 - 迁移从「调外部 CLI」改为「嵌入二进制子命令」
 
+### Fixed
+- `/ip/:addr` 校验目标是否合法 IP，非 IP 返回 404 且不带缓存头
+- 静态资源只在 200 响应上设 `Cache-Control`，缺失的 hash 资源不再被缓存为 `immutable`
+- 数据目录权限收窄为 `0700`
+
 ### Technical Debt
 - Introduced: TD-01 迁移文件存在两份副本
 - Introduced: TD-02 配额与缓存尚未接入查询路径

@@ -132,7 +132,7 @@ sources:
     db_path: "./data/GeoLite2-City.mmdb"
     asn_db_path: "./data/GeoLite2-ASN.mmdb"
   abuseipdb:
-    api_key: ""            # 建议用环境变量 IPSPOT_ABUSEIPDB_KEY 覆盖
+    api_key: ""            # 建议用环境变量 IPSPOT_SOURCES_ABUSEIPDB_API_KEY 覆盖
     daily_limit: 1000
   rdap:
     base_url: "https://rdap.org"
@@ -295,6 +295,8 @@ type Source interface {
 | 模板渲染 | `c.HTML` | `render.HTMLRender` 适配 + `c.Render` | 直接 `c.HTML` 需要 `*gin.Engine` 上有 render 实例，测试中构造 `gin.New()` 时会 nil panic |
 | 静态资源缓存 | 中间件按路径判定 | 抽成 `cacheControlFor(path)` 纯函数 | 缺失资源被 `http.FileServer` 返回 404 时会清空头，无法在集成测试中断言，纯函数可直接测 |
 | IP 校验 | `strings.Contains(".")` | `netip.ParseAddr` | 原实现让 `/favicon.ico`、`/robots.txt` 都返回 200 |
+| `/ip/:addr` 校验 | 仅纯文本路由校验 | 报告页同样校验 | 非 IP 路径曾返回 200 + `s-maxage`，可被构造出无限缓存条目 |
+| 静态资源缓存头 | 请求前统一设置 | 只在 200 响应上设置 | 404 曾带 `immutable`，缺失的 hash 资源会被客户端缓存一年 |
 | `cover` 范围 | `./...` | `./internal/...` | `cmd/` 与空壳包（`web`、`model` 零覆盖率包）拉低整体数字 |
 
 ### 技术决策

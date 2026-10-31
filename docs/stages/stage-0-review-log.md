@@ -88,3 +88,42 @@
 
 **所有 Critical 已修**：是
 **所有 High 已修**：是
+
+---
+
+## 安全评审（Stage 0）
+
+**评审类型**：安全 / 隐私
+**评审日期**：2026-10-31
+**范围**：全部已提交文件 + 完整 git 历史
+
+### 历史与隐私
+
+| # | 严重度 | 发现 | 处理 |
+|---|---|---|---|
+| 1 | High | `CHANGELOG.md` 含真实域名注册记录，已进入 git 历史 | `git filter-repo` 改写全部 4 个 commit，删除该行；`git log -S` 确认零残留 |
+| 2 | Medium | `CHANGELOG.md` 点名私有文档标题，`.gitignore` 注释自述内容性质 | 一并从历史删除，`.gitignore` 注释改为「本地草稿」 |
+| 3 | Low | 数据目录 `0755`、DB 文件 `0644`，同机其他用户可读查询历史 | `MkdirAll` 改 `0700`（`store.go`、`migrate.go`） |
+
+私有目录 `docs/internal/`、`data/`、`bin/`、`configs/config.yaml` 经 `git log --all --name-only` 确认**从未进入任何提交**，无需处理。
+
+### 代码安全
+
+| # | 严重度 | 发现 | 处理 |
+|---|---|---|---|
+| 4 | Medium | `/ip/:addr` 未校验是否为 IP，任意字符串返回 200 + `s-maxage`，可构造无限缓存条目并污染 SEO | 复用 `looksLikeIP` 校验，非 IP 返回 404 且无缓存头；`TestNonIPReportPathIs404` 覆盖 |
+| 5 | Medium | 静态资源在请求前无条件设 `Cache-Control`，缺失的 hash 资源返回 `404 + immutable`，被缓存一年 | 包一层 `cacheableWriter`，只在 200 时设置；`TestMissingHashedAssetIsNotCached` 覆盖 |
+| 6 | Medium | 设计文档写的密钥环境变量名 `IPSPOT_ABUSEIPDB_KEY` 与实现 `IPSPOT_SOURCES_ABUSEIPDB_API_KEY` 不一致，照文档配置会以为密钥丢失 | 文档改为实现中的名字 |
+
+已核实无问题：SQL 全参数化、`html/template` 自动转义、`embed.FS` 无路径穿越、无硬编码凭据、历史无 `BEGIN PRIVATE KEY` / token。
+
+### 待办（转技术债）
+
+限流、请求体上限、安全响应头、`ReadHeaderTimeout`、`index.html` 内联 `onsubmit` 与未来 CSP 的冲突——均归入 Stage 5。
+
+### 解决摘要
+
+**总发现**：6
+**已修**：6
+**延期**：0
+**不修**：0

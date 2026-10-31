@@ -19,7 +19,7 @@ var embeddedMigrations embed.FS
 // 因此迁移使用独立连接，避免影响业务连接池。
 func withMigrator(dsn string, fn func(*migrate.Migrate) error) error {
 	if dir := dsnDir(dsn); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return fmt.Errorf("创建数据目录 %s: %w", dir, err)
 		}
 	}

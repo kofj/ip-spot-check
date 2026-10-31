@@ -20,7 +20,7 @@ func Open(driver, dsn string, maxOpenConns int) (*Store, error) {
 		return nil, fmt.Errorf("不支持的驱动: %s", driver)
 	}
 	if dir := dsnDir(dsn); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, fmt.Errorf("创建数据目录 %s: %w", dir, err)
 		}
 	}

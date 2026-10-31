@@ -82,6 +82,29 @@ func TestNonIPPathIs404(t *testing.T) {
 	}
 }
 
+func TestNonIPReportPathIs404(t *testing.T) {
+	h := newTestRouter(t)
+	for _, p := range []string{"/ip/hello", "/ip/1.2.3.4.5", "/ip/%3Cscript%3E"} {
+		rec := do(t, h, p)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s status = %d, want 404", p, rec.Code)
+		}
+		if cc := rec.Header().Get("Cache-Control"); strings.Contains(cc, "s-maxage") {
+			t.Errorf("%s 非 IP 路径不应可缓存，Cache-Control = %q", p, cc)
+		}
+	}
+}
+
+func TestMissingHashedAssetIsNotCached(t *testing.T) {
+	rec := do(t, newTestRouter(t), "/static/app.a3f9c2d1.css")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+	if cc := rec.Header().Get("Cache-Control"); strings.Contains(cc, "immutable") {
+		t.Errorf("404 不应带 immutable，Cache-Control = %q", cc)
+	}
+}
+
 func TestIPv6PlainText(t *testing.T) {
 	rec := do(t, newTestRouter(t), "/2606:4700::1111")
 	if rec.Code != http.StatusOK {
