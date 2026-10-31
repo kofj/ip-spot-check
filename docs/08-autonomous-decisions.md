@@ -17,6 +17,9 @@
 | 5 | 任务入口收敛到 Taskfile | 0 | 2026-10-31 | 已采纳 |
 | 6 | IP 报告页走 CDN 缓存，TTL 分级 | 0 | 2026-10-31 | 已采纳 |
 | 7 | 单机部署边界 + 状态抽象 | 0 | 2026-10-31 | 已采纳 |
+| 8 | Go 版本定为 1.26.0 | 0 | 2026-10-31 | 已采纳 |
+| 9 | 迁移嵌入二进制，不依赖外部 CLI | 0 | 2026-10-31 | 已采纳 |
+| 10 | 静态资源缓存判定抽为纯函数 | 0 | 2026-10-31 | 已采纳 |
 
 ---
 
@@ -215,3 +218,72 @@
 **考虑过的替代方案**：
 1. 直接做多副本：SQLite 需换 Postgres、缓存需换 Redis、singleflight 需换分布式锁，成本与收益严重不匹配
 2. 完全不管单机限制：省事，但多副本时会静默失效且难以归因
+
+---
+
+### Decision 8: Go 版本定为 1.26.0
+
+**背景**：设计稿写的是 Go 1.25。实际拉依赖时发现 `golang.org/x/sys@v0.49.0`、`modernc.org/libc`、`modernc.org/sqlite` 最新版均要求 `go >= 1.26.0`；尝试回退到兼容 1.25 的版本会把 modernc 降级到 v1.38.0，sqlite 驱动随之下探，风险高于收益。
+
+**决策**：`go.mod` 写 `go 1.26.0` 并加 `toolchain go1.26.0`；`Taskfile.yml` 全局设 `GOTOOLCHAIN=go1.26.0`。
+
+**理由**：本机 gvm 装的是 1.25.5，Go 的 auto toolchain 会按 `go.mod` 自动下载并使用 1.26.0。但 `go test -cover` 与 `go tool cover` 在混用两套编译器时会报 `compile: version "go1.26.0" does not match go tool version "go1.25.5"`。全局固定 toolchain 环境变量是唯一可靠解法。
+
+**对后续 Stage 的影响**：
+- 任何新增任务都必须能在 `GOTOOLCHAIN=go1.26.0` 下运行
+- CI（Stage 5）需显式安装 1.26.0 或依赖 toolchain 自动下载
+- 升级 Go 时需要重新验证整个依赖链的版本约束
+
+**日期**：2026-10-31
+
+**相关 Stage**：Stage 0
+
+**考虑过的替代方案**：
+1. 回退到兼容 Go 1.25 的依赖组合：需要把 `modernc.org/sqlite` 降到 v1.38.0，驱动能力与稳定性都下降
+2. 不固定 `toolchain`，依赖 auto 行为：`-cover` 路径会失败，属于难排查的环境问题
+
+---
+
+### Decision 9: 迁移嵌入二进制，不依赖外部 CLI
+
+**背景**：设计稿让 Taskfile 直接调 `migrate` CLI。实际环境中 CLI 未安装，Docker 镜像还要额外装。
+
+**决策**：`migrate` 作为库嵌入，二进制暴露 `ipspot migrate up|down|version` 子命令。
+
+**理由**：单二进制是部署目标的核心约束。迁移和程序读同一份配置取 DSN，不会出现「迁移连 A 库、程序连 B 库」。
+
+**关键实现约束**：`migrate/database/sqlite` 的 `Close()` 会**关闭传入的 `*sql.DB`**。若与业务连接池共用，迁移结束后整个进程的数据库访问都会失效（报 `sql: database is closed`）。因此迁移必须用独立连接，见 `withMigrator`。
+
+**对后续 Stage 的影响**：
+- Stage 5 的 Dockerfile 不需要装 migrate 工具
+- 任何在启动时自动迁移的实现，都必须在独立连接上做，用完即关
+- 迁移文件的 embed 位置固定在 `internal/store/migrations/`，新增迁移必须同步到 `migrations/`（`task migrate:create` 已处理）
+
+**日期**：2026-10-31
+
+**相关 Stage**：Stage 0 / 5
+
+**考虑过的替代方案**：
+1. 外部 `migrate` CLI：多一个部署依赖，且本机没有
+2. 手写迁移执行器：重复造轮子，且容易漏掉 dirty 状态处理
+
+---
+
+### Decision 10: 静态资源缓存判定抽为纯函数
+
+**背景**：设计稿要求「带内容哈希的资源走 immutable」。集成测试里用 `httptest` 请求不存在的带 hash 文件时，`http.FileServer` 返回 404 并**清空 `Cache-Control`**，导致无法断言。
+
+**决策**：把判定逻辑抽为 `cacheControlFor(path string) string` 纯函数，直接单测；集成测试只断言存在的资源。
+
+**理由**：行为正确的证明不一定要经过完整 HTTP 栈。纯函数测试更稳定，也更直接表达意图。
+
+**对后续 Stage 的影响**：
+- Stage 4 引入带哈希的资产后，可以直接复用该函数
+- 若将来加 CDN 特定头（如 `CDN-Cache-Control`），在此函数内扩展即可
+
+**日期**：2026-10-31
+
+**相关 Stage**：Stage 0 / 4
+
+**考虑过的替代方案**：
+1. 搭一个带 hash 文件的测试 fixture：可行但增加测试复杂度，且仍受 FileServer 404 行为影响

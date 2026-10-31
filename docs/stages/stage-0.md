@@ -1,11 +1,16 @@
 # Stage 0：技术框架定型
 
 ## 状态
-[ ] 规划中 / [x] 进行中 / [ ] 完成
+[x] 规划中 / [x] 进行中 / [x] 完成
 
 ## 目标
 
 把实现层面的基础决策一次性定下来，避免 Stage 1 开始后反复返工。**Stage 0 不产出产品功能**，只产出可编译的空壳、可执行的迁移和统一的运行入口。
+
+## 核心假设
+
+- **H0a**：`Source` 接口的设计（原始字段不归一化、错误作为字段）能容纳 Stage 2 要接入的 6 个源，不需要二次改造
+- **H0b**：`observations` 表「一行一源一时点」的结构，能同时支撑 Stage 3 的缓存 key 和 Stage 6 的历史对比，不需要加宽表
 
 ## 非目标
 
@@ -18,10 +23,10 @@
 
 | # | 决策项 | 选择 | 理由 |
 |---|---|---|---|
-| 1 | 语言 | Go 1.25 | 并发拉源是本来长处；单二进制；交叉编译简单 |
+| 1 | 语言 | Go **1.26.0**（`go.mod` 与 `toolchain` 均固定） | 并发拉源是本来长处；单二进制；交叉编译简单。依赖链（x/sys、modernc/libc）已要求 1.26，无法回退到 1.25 |
 | 2 | HTTP 框架 | **Gin** | 路由分组、参数绑定、中间件生态齐全，裸 `net/http` 手写路由在源多起来后维护成本高 |
 | 3 | 数据库 | SQLite，驱动 `modernc.org/sqlite`（纯 Go，无 cgo） | 单机小数据量零运维；纯 Go 版交叉编译无障碍 |
-| 4 | 迁移 | **`golang-migrate/migrate`**，版本化 `NNNN_name.up.sql` / `.down.sql` | 有版本、有 up/down、有 CLI 和库两种用法，Docker 里跑 `migrate up` 即可 |
+| 4 | 迁移 | **`golang-migrate/migrate` v4.19.0（作为库）**，版本化 `NNNN_name.up.sql` / `.down.sql` | 有版本、有 up/down。**作为库嵌入二进制**，暴露 `ipspot migrate up/down/create` 子命令，不依赖外部 CLI |
 | 5 | 配置 | **YAML 配置文件 + 环境变量覆盖** | 配置文件便于 Docker / k8s ConfigMap 挂载；环境变量覆盖便于容器化和密钥注入 |
 | 6 | 日志 | `log/slog` | 标准库、结构化、够用 |
 | 7 | 前端渲染 | **`html/template` 服务端渲染** | 见下方「为什么不用 React/Next」 |
@@ -58,14 +63,16 @@ html/template（现状）
 
 ### 依赖清单（初始）
 
-| 依赖 | 用途 | 类型 |
+| 依赖 | 版本 | 用途 |
 |---|---|---|
-| `github.com/gin-gonic/gin` | HTTP | 直接 |
-| `modernc.org/sqlite` | DB 驱动 | 直接 |
-| `github.com/golang-migrate/migrate/v4` | 迁移 | 直接 |
-| `gopkg.in/yaml.v3` | 配置解析 | 直接 |
-| `github.com/oschwald/maxminddb-golang` | GeoLite2（Stage 2 加） | 直接 |
-| `golang.org/x/net` | DNS 查询（按需） | 间接 |
+| `github.com/gin-gonic/gin` | latest | HTTP |
+| `modernc.org/sqlite` | latest | DB 驱动（纯 Go，无 CGO） |
+| `github.com/golang-migrate/migrate/v4` | **固定 v4.19.0** | 迁移。v4.20+ 要求 Go >= 1.25.11，v4.19.0 只要求 1.23 |
+
+**迁移用库不用 CLI。** `migrate` 作为库嵌入，二进制自带子命令，Docker 镜像不需要额外装工具链。驱动只用 `migrate/database/sqlite`（纯 Go），**不要用 `migrate/database/sqlite3`**——后者要求 CGO。
+| `gopkg.in/yaml.v3` | latest | 配置解析 |
+| `github.com/oschwald/maxminddb-golang` | latest | GeoLite2（Stage 2 加） |
+| `golang.org/x/net` | latest | DNS 查询（按需） |
 
 配置加载自己写（YAML + `os.Getenv` 覆盖），**不引入 viper**。viper 会带进十几个间接依赖，而我们的配置项不到 15 个。
 
@@ -226,17 +233,20 @@ Go 侧通过 `embed.FS` 打包 `web/`，启动时把 `static/` 挂到 `/static/`
 
 | 命令 | 作用 |
 |---|---|
-| `task dev` | 本地起服务（热重载可选） |
 | `task build` | 编译到 `bin/ipspot` |
+| `task dev` | 构建并启动，读 `configs/config.yaml` |
 | `task test` | `go test ./...` |
+| `task cover` | 覆盖率报告 |
 | `task lint` | `gofmt -l` + `go vet` |
-| `task migrate:up` | 应用全部迁移 |
-| `task migrate:down` | 回滚一个版本 |
-| `task migrate:create NAME=x` | 生成新的 up/down 文件对 |
-| `task docker:build` | 构建镜像 |
-| `task clean` | 清理产物 |
+| `task migrate:up` | `bin/ipspot migrate up` |
+| `task migrate:down` | `bin/ipspot migrate down 1` |
+| `task migrate:version` | 查看当前版本 |
+| `task migrate:create NAME=x` | 生成 `NNNN_x.up.sql` / `.down.sql` |
+| `task clean` | 清理 `bin/` 与 `data/` |
 
-`Taskfile.yml` 里 `migrate:*` 直接调 `migrate` CLI，参数从 `configs/config.yaml` 读 DSN，和程序用同一份配置，避免两边漂移。
+**迁移走二进制自带子命令，不依赖外部 `migrate` CLI。** `bin/ipspot migrate up` 内部把 `migrate` 当库用，DSN 从同一份 `configs/config.yaml` 读，迁移和程序不会连到不同的库。
+
+`docker:*` 任务到 Stage 5 再加（Stage 0 不做部署脚本）。
 
 ## 核心接口
 
@@ -267,9 +277,50 @@ type Source interface {
 - [ ] `task migrate:create NAME=test` 能生成 up/down 文件对
 - [ ] 配置文件加载 + 环境变量覆盖生效
 - [ ] `task test` 通过（占位测试）
-- [ ] `GET /static/` 下资源带 `Cache-Control: immutable`
+- [ ] `/static/` 下带 hash 的资源返回 `immutable`，不带 hash 的返回 `no-cache`
+- [ ] `bin/ipspot migrate up` 与 `task migrate:up` 等价
 - [ ] 依赖数 <= 4（gin / sqlite / migrate / yaml）
 - [ ] 全部技术决策记录进 ADR
+
+## 实现记录
+
+### 与设计的差异
+
+| 项 | 设计 | 实际 | 原因 |
+|---|---|---|---|
+| Go 版本 | 1.25 | **1.26.0** | 依赖链（`golang.org/x/sys`、`modernc.org/libc`）已要求 1.26，无法回退 |
+| `migrate` CLI | Taskfile 调外部 CLI | 二进制自带 `ipspot migrate` 子命令 | 本机无 CLI，且单二进制更符合部署目标 |
+| 迁移连接 | 复用业务 `*sql.DB` | 独立连接 | `migrate/database/sqlite` 在 Close 时会把底层 `*sql.DB` 关掉，复用会废掉连接池 |
+| 迁移文件位置 | 仅 `migrations/` | `migrations/` + `internal/store/migrations/`（后者供 `go:embed`） | embed 不能跨包目录。两处由 `task migrate:create` 同步创建 |
+| 模板渲染 | `c.HTML` | `render.HTMLRender` 适配 + `c.Render` | 直接 `c.HTML` 需要 `*gin.Engine` 上有 render 实例，测试中构造 `gin.New()` 时会 nil panic |
+| 静态资源缓存 | 中间件按路径判定 | 抽成 `cacheControlFor(path)` 纯函数 | 缺失资源被 `http.FileServer` 返回 404 时会清空头，无法在集成测试中断言，纯函数可直接测 |
+| IP 校验 | `strings.Contains(".")` | `netip.ParseAddr` | 原实现让 `/favicon.ico`、`/robots.txt` 都返回 200 |
+| `cover` 范围 | `./...` | `./internal/...` | `cmd/` 与空壳包（`web`、`model` 零覆盖率包）拉低整体数字 |
+
+### 技术决策
+
+- 迁移驱动只用 `migrate/database/sqlite`（纯 Go），**不用** `sqlite3`（需 CGO）
+- 缓存与配额走接口：`cache.Cache` / `quota.Guard`，单机实现分别为 `Memory` 与 `SQLGuard`
+- `Taskfile.yml` 固定 `GOTOOLCHAIN=go1.26.0`：本机 gvm 是 1.25.5，不固定会导致 `-cover` 路径混用两套编译器，报 `compile: version "go1.26.0" does not match go tool version "go1.25.5"`
+
+### 测试证据
+
+- 单元测试覆盖率：**83.3%**（`./internal/...`，`task cover`）
+- 每个包：cache 91.7% / httpapi 94.9% / query 90.9% / store 78.1% / quota 78.3% / config 75.6%
+- E2E（真实 HTTP）：
+  - `task dev` 启动后逐路径验证
+  - `/healthz` 200 · `/` 200 · `/ip/1.1.1.1` 200 · `/8.8.8.8` 200（text/plain）· `/2606:4700::1111` 200 · `/static/app.css` 200（`no-cache`）
+  - `/favicon.ico`、`/robots.txt`、`/hello.world` 均 404
+- 真实环境验证：本机 8080 端口，`curl --noproxy '*'` 逐条确认状态码与 `Cache-Control`
+- 干净环境验证：`rm -rf bin data && task build && task migrate:up && task migrate:version` → `version=1 dirty=false`
+
+### 交接说明
+
+- `bin/ipspot migrate up|down -steps N|version` 是唯一迁移入口
+- 新增迁移用 `task migrate:create NAME=x`，会同时写 `migrations/` 与 `internal/store/migrations/`
+- `configs/config.yaml` 已在 `.gitignore`，`configs/config.example.yaml` 才是模板
+- `data/` 与 `bin/` 均已忽略
+- 引擎 `query.Engine` 已支持并发拉源，但 `source.Source` 尚无任何实现——Stage 2 从零开始加 adapter
 
 ## 回滚方案
 

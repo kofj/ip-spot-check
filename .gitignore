@@ -39,3 +39,9 @@ go.work.sum
 
 # 本地草稿
 docs/internal/
+
+# 运行产物
+/bin/
+/data/
+coverage.out
+configs/config.yaml

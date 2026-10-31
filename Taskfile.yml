@@ -1,0 +1,80 @@
+version: '3'
+
+vars:
+  BIN: ./bin/ipspot
+  CONFIG: ./configs/config.yaml
+
+# 本机 gvm 的 go 为 1.25.5，模块要求 1.26.0。
+# 显式固定 toolchain，避免 -cover 等路径混用两套编译器。
+env:
+  GOTOOLCHAIN: go1.26.0
+
+tasks:
+  build:
+    desc: 编译到 bin/ipspot
+    cmds:
+      - go build -trimpath -ldflags="-s -w" -o {{.BIN}} ./cmd/ipspot
+
+  dev:
+    desc: 构建并启动
+    deps: [build]
+    cmds:
+      - IPSPOT_CONFIG={{.CONFIG}} {{.BIN}}
+
+  test:
+    desc: 运行全部测试
+    cmds:
+      - go test ./...
+
+  cover:
+    desc: 覆盖率报告（只看有测试的 internal 包；cmd 与空壳包不计入）
+    cmds:
+      - go test -coverprofile=coverage.out ./internal/...
+      - go tool cover -func=coverage.out | tail -1
+
+  lint:
+    desc: 格式与静态检查
+    cmds:
+      - test -z "$(gofmt -l .)"
+      - go vet ./...
+
+  migrate:up:
+    desc: 应用全部迁移
+    deps: [build]
+    cmds:
+      - "{{.BIN}} migrate up"
+
+  migrate:down:
+    desc: 回滚一个版本
+    deps: [build]
+    cmds:
+      - "{{.BIN}} migrate down -steps 1"
+
+  migrate:version:
+    desc: 查看当前迁移版本
+    deps: [build]
+    cmds:
+      - "{{.BIN}} migrate version"
+
+  migrate:create:
+    desc: 生成新的 up/down 文件对（NAME=xxx）
+    requires:
+      vars: [NAME]
+    cmds:
+      - |
+        last=$(ls internal/store/migrations/*.up.sql 2>/dev/null | sed 's#.*/##' | cut -d_ -f1 | sort -n | tail -1)
+        next=$(printf "%04d" $(( ${last:-0} + 1 )))
+        for dir in migrations internal/store/migrations; do
+          touch "$dir/${next}_{{.NAME}}.up.sql" "$dir/${next}_{{.NAME}}.down.sql"
+        done
+        echo "created ${next}_{{.NAME}}.{up,down}.sql"
+
+  clean:
+    desc: 清理产物
+    cmds:
+      - rm -rf bin coverage.out .task
+
+  fmt:
+    desc: 格式化
+    cmds:
+      - gofmt -w .

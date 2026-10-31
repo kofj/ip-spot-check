@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS quota_usage;
+DROP TABLE IF EXISTS queries;
+DROP TABLE IF EXISTS observations;

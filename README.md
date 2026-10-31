@@ -19,6 +19,20 @@ RDD 框架入口：`AGENTS.md`（AI Agent）、`CLAUDE.md`（Claude Code）。�
 | [11-next-steps](docs/11-next-steps.md) | 下一步 |
 | [12-technical-debt](docs/12-technical-debt.md) | 技术债 |
 
+## 开发
+
+```bash
+cp configs/config.example.yaml configs/config.yaml
+task build          # 编译到 bin/ipspot
+task migrate:up     # 建表
+task dev            # 启动，默认 :8080
+task test           # 单元测试
+task cover          # 覆盖率
+task lint           # gofmt + go vet
+```
+
+本机 go 为 gvm 1.25.5，模块要求 1.26.0；`Taskfile.yml` 已全局固定 `GOTOOLCHAIN=go1.26.0`。
+
 ## 一句话
 
 本站不接受 IP 商家付费，数据全部来自公开源并可复现。

@@ -1,0 +1,28 @@
+server:
+  addr: ":8080"
+  read_timeout: 10s
+  write_timeout: 15s
+
+database:
+  driver: sqlite
+  dsn: "file:./data/ipspot.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+  max_open_conns: 4
+
+log:
+  level: info
+  format: json
+
+sources:
+  maxmind:
+    db_path: "./data/GeoLite2-City.mmdb"
+    asn_db_path: "./data/GeoLite2-ASN.mmdb"
+  abuseipdb:
+    api_key: ""
+    daily_limit: 1000
+  rdap:
+    base_url: "https://rdap.org"
+    timeout: 5s
+
+cache:
+  backend: memory
+  ttl: 24h

@@ -11,12 +11,66 @@
 | 优先级 | 数量 | 阻塞中 |
 |--------|------|--------|
 | 架构级 | 0 | 0 |
-| 模块级 | 0 | 0 |
-| 局部 | 0 | 0 |
+| 模块级 | 2 | 0 |
+| 局部 | 2 | 0 |
 
 ## 活跃技术债
 
-（暂无）
+### TD-01: 迁移文件存在两份副本
+
+- **优先级**：技术优化 / 模块级
+- **来源**：原型妥协（Stage 0）
+- **原始描述**：`go:embed` 不能跨包目录，因此 `migrations/` 与 `internal/store/migrations/` 各存一份 SQL
+- **源文件**：`migrations/*.sql`、`internal/store/migrations/*.sql`
+- **建议解决 Stage**：Stage 3（引入正式迁移时）
+- **影响**：两者可能漂移；目前靠 `task migrate:create` 同步创建缓解
+- **解决成本**：低
+- **创建日期**：2026-10-31
+
+#### 解决计划
+用 `task` 在构建前从 `migrations/` 同步到 `internal/store/migrations/`，或改用 `embed` 指向同目录下的软链方案。
+
+### TD-02: 配额与缓存的单机实现尚未接入查询路径
+
+- **优先级**：功能降级 / 模块级
+- **来源**：自主决策妥协（Stage 0）
+- **原始描述**：`cache.Memory` 与 `quota.SQLGuard` 已实现并测试，但 `query.Engine` 尚未使用它们
+- **源文件**：`internal/query/engine.go`
+- **建议解决 Stage**：Stage 3
+- **影响**：当前没有任何缓存与额度保护，接入真实源后会立刻烧额度
+- **解决成本**：中
+- **创建日期**：2026-10-31
+
+#### 解决计划
+Stage 3 把 Engine 改为依赖 `cache.Cache` 与 `quota.Guard`，并加 singleflight。
+
+### TD-03: 首页表单用内联 JS 拼接 action
+
+- **优先级**：技术优化 / 局部
+- **来源**：原型妥协（Stage 0）
+- **原始描述**：`onsubmit` 内联 JS 改 action 属临时手段
+- **源文件**：`web/templates/index.html`
+- **建议解决 Stage**：Stage 4
+- **影响**：无 JS 环境下表单无法工作
+- **解决成本**：低
+- **创建日期**：2026-10-31
+
+#### 解决计划
+Stage 4 改为标准 `<form action="/ip">` + 服务端重定向，或 `GET /ip?addr=`。
+
+### TD-04: `cmd/` 无测试
+
+- **优先级**：技术优化 / 局部
+- **来源**：原型妥协（Stage 0）
+- **原始描述**：`main.go` 的 `migrate` 子命令与 `serve` 无单元测试，仅靠手工验证
+- **源文件**：`cmd/ipspot/main.go`
+- **建议解决 Stage**：Stage 5
+- **影响**：子命令回归风险
+- **解决成本**：低
+- **创建日期**：2026-10-31
+
+#### 解决计划
+把 `migrateCmd` 抽到 `internal/cli` 并加测试。
 
 ---
 

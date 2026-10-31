@@ -40,7 +40,7 @@ cat docs/11-next-steps.md
 
 ## 技术栈
 
-Go 1.25 + Gin + SQLite（modernc，纯 Go）+ golang-migrate + html/template。配置走 YAML 文件 + 环境变量覆盖。所有操作经 `task` 收敛。
+Go 1.26.0 + Gin + SQLite（modernc，纯 Go）+ golang-migrate v4.19.0（作库）+ html/template。Taskfile 内固定 `GOTOOLCHAIN=go1.26.0`。配置走 YAML 文件 + 环境变量覆盖。所有操作经 `task` 收敛。
 
 完整决策见 `docs/stages/stage-0.md` 与 `docs/08-autonomous-decisions.md`。
 

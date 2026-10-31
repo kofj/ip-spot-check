@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ip-spot-check</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main>
+  <h1>ip-spot-check</h1>
+  <p class="muted">多源并列，不提供总分。</p>
+  <form action="/ip/" method="get" onsubmit="this.action='/ip/'+encodeURIComponent(this.addr.value);return true">
+    <input name="addr" placeholder="1.1.1.1 或 2606:4700::1111" autocomplete="off">
+    <button type="submit">查询</button>
+  </form>
+</main>
+</body>
+</html>
