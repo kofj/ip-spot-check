@@ -1,0 +1,90 @@
+templates:
+  roadmap_change:
+    title: "Roadmap Updated"
+    block_message: "Roadmap change requires human review, Agent paused"
+    body: |
+      项目路线图已变更。
+
+      项目：{{project_name}}
+      变更类型：{{change_type}}
+      变更人：{{changed_by}}
+      时间：{{timestamp}}
+
+      {{change_details}}
+
+  failure_alert:
+    title: "Consecutive Failures Alert"
+    block_message: "{{failure_count}} consecutive failures, Agent paused"
+    body: |
+      CRITICAL: 连续失败。
+
+      项目：{{project_name}}
+      Stage：{{stage_name}}
+      失败次数：{{failure_count}}
+      最后一次错误：{{last_error}}
+      时间：{{timestamp}}
+
+  hypothesis_invalid:
+    title: "Hypothesis Invalidated"
+    block_message: "Core hypothesis invalidated, Agent paused for decision"
+    body: |
+      核心假设在验证中被推翻。
+
+      项目：{{project_name}}
+      假设：{{hypothesis_text}}
+      推翻原因：{{invalidation_reason}}
+      证据：{{evidence}}
+      时间：{{timestamp}}
+
+  model_disagreement:
+    title: "Model Disagreement Detected"
+    block_message: "Model disagreement detected, human review suggested"
+    body: |
+      模型间出现显著分歧。
+
+      项目：{{project_name}}
+      模型：{{model_names}}
+      上下文：{{context}}
+      时间：{{timestamp}}
+
+  tech_debt_alert:
+    title: "Tech Debt Threshold Exceeded"
+    block_message: "Tech debt exceeds threshold, Agent paused"
+    body: |
+      技术债超过阈值。
+
+      项目：{{project_name}}
+      当前债务条目：{{debt_count}}
+      阈值：{{threshold}}
+      时间：{{timestamp}}
+
+  stage_complete:
+    title: "Stage Completed"
+    block_message: "Stage {{stage_name}} completed"
+    body: |
+      Stage 完成。
+
+      项目：{{project_name}}
+      Stage：{{stage_name}}
+      耗时：{{duration}}
+      覆盖率：{{coverage}}%
+      时间：{{timestamp}}
+
+  daily_report:
+    title: "Daily Progress Report"
+    body: |
+      {{project_name}} 日报。
+
+      日期：{{date}}
+      已完成任务：{{completed_tasks}}
+      进行中：{{in_progress_tasks}}
+      技术债条目：{{tech_debt_count}}
+
+  weekly_report:
+    title: "Weekly Progress Report"
+    body: |
+      {{project_name}} 周报。
+
+      周期：{{week_range}}
+      完成任务：{{tasks_completed}}
+      完成 Stage：{{stages_finished}}

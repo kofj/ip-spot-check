@@ -31,3 +31,11 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# RDD runtime
+.rdd/cache/*
+!.rdd/cache/.gitkeep
+
+
+# 本地草稿
+docs/internal/

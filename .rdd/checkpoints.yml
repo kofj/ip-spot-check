@@ -1,0 +1,43 @@
+checkpoints:
+  stage_complete_review:
+    enabled: true
+    trigger: "stage_complete"
+    requirements:
+      - "所有测试通过"
+      - "覆盖率达标"
+      - "无超阈值技术债"
+      - "文档已更新"
+    auto_approve_conditions:
+      coverage_above: 80
+      no_blockers: true
+      tech_debt_below: 1
+
+  adr_review:
+    enabled: true
+    trigger: "adr_created"
+    requirements:
+      - "ADR 遵循模板格式"
+      - "决策理由已记录"
+      - "考虑了替代方案"
+      - "影响评估完整"
+
+  new_debt:
+    enabled: true
+    trigger: "tech_debt_added"
+    requirements:
+      - "债务条目已记录"
+      - "优先级已分配"
+      - "解决计划已提出"
+    auto_approve_conditions:
+      priority: "low"
+
+  daily_sync:
+    enabled: true
+    trigger: "scheduled"
+    schedule: "daily"
+    time: "09:00"
+    timezone: "Asia/Shanghai"
+
+state:
+  storage_path: ".rdd/cache/checkpoints.json"
+  history_retention_days: 30

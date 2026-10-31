@@ -1,0 +1,29 @@
+version: "1.0.0"
+
+project:
+  name: "ip-spot-check"
+  description: "多源并列的 IP 检测工具。不提供总分，不接 IP 商家付费。"
+
+stage:
+  min_coverage: 20
+  max_failures: 3
+  tech_debt_threshold: 3
+
+gates:
+  design_required: true
+  review_required: true
+  e2e_required: true
+  docs_required: true
+
+hooks:
+  enabled: false
+  config_file: ".rdd/hooks.yml"
+  templates_file: ".rdd/templates.yml"
+
+notifications:
+  quiet_hours:
+    enabled: true
+    start: "22:00"
+    end: "08:00"
+    timezone: "Asia/Shanghai"
+    bypass_for_p0: true
