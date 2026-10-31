@@ -11,10 +11,25 @@
 | 优先级 | 数量 | 阻塞中 |
 |--------|------|--------|
 | 架构级 | 0 | 0 |
-| 模块级 | 2 | 0 |
+| 模块级 | 3 | 0 |
 | 局部 | 2 | 0 |
 
 ## 活跃技术债
+
+### TD-05: 缺少 HTTP 安全基线
+
+- **优先级**：技术优化 / 模块级
+- **来源**：评审延后（安全评审，Stage 0）
+- **原始描述**：无限流、无请求体上限、无 `ReadHeaderTimeout`、无 `X-Content-Type-Options` / CSP / Referrer-Policy；`web/templates/index.html` 用内联 `onsubmit`，将来加 CSP 需 nonce 或去掉内联 JS
+- **源文件**：`cmd/ipspot/main.go`、`internal/httpapi/server.go`、`web/templates/index.html`
+- **建议解决 Stage**：Stage 5（上线前）
+- **影响**：上线后直接暴露在公网，无限流意味着可被低成本耗尽源额度
+- **解决成本**：低
+- **创建日期**：2026-10-31
+- **解决日期**：（空）
+
+#### 解决计划
+Stage 5 统一在 gin 中间件层加安全响应头、请求体上限与 IP 级限流；限流同时保护源额度。
 
 ### TD-01: 迁移文件存在两份副本
 
