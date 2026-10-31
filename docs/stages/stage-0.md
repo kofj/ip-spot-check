@@ -25,7 +25,7 @@
 | 5 | 配置 | **YAML 配置文件 + 环境变量覆盖** | 配置文件便于 Docker / k8s ConfigMap 挂载；环境变量覆盖便于容器化和密钥注入 |
 | 6 | 日志 | `log/slog` | 标准库、结构化、够用 |
 | 7 | 前端渲染 | **`html/template` 服务端渲染** | 见下方「为什么不用 React/Next」 |
-| 8 | 交互增强 | **htmx（可选，Stage 4 再定）** | 14KB，与模板模型天然契合，不需要第二套运行时 |
+| 8 | 交互增强 | **内联 JSON + uPlot；htmx 备选** | 不需要第二套运行时或构建链 |
 | 9 | 任务入口 | **Taskfile（`task`）** | 统一 build / test / migrate / run 入口，已装 3.54 |
 | 10 | 依赖预算 | 直接依赖 <= 8，每新增一个需写 ADR | 每个依赖都是三年后的维护成本 |
 
@@ -42,11 +42,17 @@
 **如果以后确实需要交互**（历史曲线、差异对比、批量查询），按顺序考虑：
 
 ```
-html/template  →  + htmx（局部刷新，无需写 JS）
-               →  + 少量原生 JS（图表用 uPlot 之类 ~40KB）
-               →  + 岛屿架构（Astro / 独立 widget）
-               →  React / Next（最后才考虑，且只用于 /app 这类登录后页面）
+html/template（现状）
+   → + 内联 JSON + 40KB uPlot（画曲线，无框架、无构建链）
+   → + htmx（局部刷新，14KB，无需写 JS）
+   → + /app 子站单独一套前端（仅在出现真正的客户端状态时）
 ```
+
+**明确否决 Astro 与岛屿架构。** 它解决的是「内容站 + 少量交互」，而这个项目是「工具站 + 零交互」。引进来会出现：
+
+- Node 构建链，等于又回到两个运行时
+- 静态页在 Astro、报告页在 Go 模板，同一域名两套模板语法
+- 报告页的数据被推回客户端拉取，违背「数据必须在首屏 HTML」的核心约束
 
 **不会出现的情况**：为了做一个查询页而引入 Next.js 全家桶。这条写进红线。
 
@@ -158,32 +164,59 @@ CREATE TABLE queries (
     queried_at  INTEGER NOT NULL
 );
 CREATE INDEX idx_queries_ip ON queries(ip, queried_at DESC);
+
+CREATE TABLE quota_usage (
+    source   TEXT NOT NULL,
+    day      TEXT NOT NULL,          -- YYYY-MM-DD，UTC
+    used     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (source, day)
+);
 ```
 
 `0001_init.down.sql` 对应 `DROP TABLE`，顺序与创建相反。
 
-只有两张表。**不做归一化宽表** —— 宽表一旦定了列，加源就要改表结构，而我们的源是会持续增加的。
+只有三张表。**不做归一化宽表** —— 宽表一旦定了列，加源就要改表结构，而我们的源是会持续增加的。
+
+`quota_usage` 从 Stage 0 就建好、Stage 3 才用：它必须落库而非放内存（见 ADR-7），提前建表避免 Stage 3 再加一次迁移。
 
 ## 前端路径与 CDN 规划
 
-路径规划的原则是**让缓存策略能按路径前缀一刀切**：
+路径规划的原则是**让缓存策略能按路径前缀一刀切**。
 
-| 路径 | 内容 | 缓存策略 |
+### 三层缓存
+
+```
+浏览器/边缘 CDN  →  origin 内存/DB 缓存  →  外部源 API（有额度）
+   1 小时              24 小时                 最贵的那层
+```
+
+**IP 报告必须走 CDN 缓存。** 这是免费额度能否撑住的关键——热门 IP 被反复查询是常态，边缘命中后 origin 都不碰，源 API 一次都不用花。
+
+| 路径 | 内容 | Cache-Control |
 |---|---|---|
-| `/` | 首页（查询框） | `no-cache`，每次校验 |
-| `/ip/<addr>` | IP 报告（HTML） | `no-cache`，数据时效性强 |
-| `/asn/<asn>` | ASN 聚合页（HTML） | `max-age=3600`，可短缓存 |
+| `/` | 首页（查询框） | `public, max-age=300, s-maxage=3600` |
+| `/ip/<addr>` | IP 报告（HTML） | `public, max-age=60, s-maxage=3600, stale-while-revalidate=86400` |
+| `/asn/<asn>` | ASN 聚合页（HTML） | `public, max-age=600, s-maxage=86400, stale-while-revalidate=604800` |
 | `/static/<name>.<hash>.<ext>` | JS / CSS / 字体 / 图标 | `public, max-age=31536000, immutable` |
 | `/api/*` | JSON 接口 | `no-store` |
-| `/1.1.1.1`（裸路径） | 纯文本 | `max-age=3600` |
+| `/<addr>`（裸路径） | 纯文本 | `public, max-age=300, s-maxage=3600, stale-while-revalidate=86400` |
+
+`stale-while-revalidate` 是关键：过期后用户仍拿到旧页面并立即返回，后台异步刷新。**用户永远不等待刷新**，而内容最多旧 1 小时——这对一份 24 小时才更新一次的数据完全不是问题。
 
 具体约束：
 
 - **静态资源必须带内容哈希**（`app.a3f9c2.js`），不带哈希的资源文件名不允许上线。这样能放心用一年期 immutable 缓存，改版即换名，无需 purge
 - **静态资源目录固定 `/static/`**，Cloudflare 侧用路径规则直接命中，不用写复杂匹配
 - **API 独立 `/api/` 前缀**，永远不参与 CDN 缓存，避免"数据被缓存住"这类最难排查的故障
-- **HTML 走 no-cache**，数据实时性优先于 TTFB
+- **HTML 也缓存**，但 TTL 分级：报告页 1 小时、ASN 页 1 天、首页 5 分钟
+- **页面无任何个性化**：不读 Cookie、不按 UA 分流、不同身份看到同一份内容。这是能被 CDN 缓存的前提，也是一条红线
 - 不用 query string 做版本（`?v=3`）：部分 CDN 和代理对 query 的缓存行为不一致
+
+### 缓存带来的两个必须处理的问题
+
+**1. 冷启动击穿。** 一个陌生 IP 突然被大量访问（论坛贴出来），CDN 全部 miss，origin 同时收到 N 个相同请求，N 个都去调源 API —— 额度瞬间烧光。origin 侧必须对同一 IP 做 singleflight 合并，只发一次外部请求。
+
+**2. 查询计数必须移出渲染路径。** 一旦 HTML 被 CDN 缓存，origin 就看不到命中请求了，"该 IP 被查询 N 次"这个数字会严重少计。处理方式：计数这个字段**不上报告页**，只在 `/api/*` 和需要 `no-store` 的历史页里出现；或者用 Cloudflare Worker 在边缘计数写 KV。
 
 Go 侧通过 `embed.FS` 打包 `web/`，启动时把 `static/` 挂到 `/static/` 并设置 `Cache-Control`。将来静态资源量大了，把 `/static/` 整个前缀切到对象存储或 Cloudflare R2，Go 侧只需改一行路由。
 
@@ -230,7 +263,7 @@ type Source interface {
 
 - [ ] `task build` 通过，`bin/ipspot` 可运行
 - [ ] `GET /healthz` 返回 200
-- [ ] `task migrate:up` 建表成功，`task migrate:down` 可回滚
+- [ ] `task migrate:up` 建三张表成功，`task migrate:down` 可回滚
 - [ ] `task migrate:create NAME=test` 能生成 up/down 文件对
 - [ ] 配置文件加载 + 环境变量覆盖生效
 - [ ] `task test` 通过（占位测试）
@@ -242,15 +275,33 @@ type Source interface {
 
 只有新增文件，无存量代码。删目录即可。
 
+## 单机部署边界
+
+**架构目标是单实例。** 理由：成本、SQLite 单写者模型、Stage 1 尚未验证需求。但单机会让三样东西只存在一份，必须提前定规矩，否则将来多副本时**静默失效**：
+
+| 状态 | 单机 | 多副本时的后果 |
+|---|---|---|
+| origin 内存缓存 | 一份，命中率正常 | 各存各的，命中率除以 N，额度消耗乘以 N |
+| 每源配额计数 | 准确 | 各算各的，**总计超限且不报错** |
+| singleflight | 有效 | 各进程各发一次，防击穿失效 |
+
+**Stage 0 定三条不花成本的规矩：**
+
+1. **缓存与配额必须走接口**（`internal/cache`、`internal/quota`），单机只是其中一个实现
+2. **配额计数持久化到数据库**，不放内存——重启不清零，且换 Postgres 后天然支持多副本
+3. **singleflight 保留进程内实现，但必须记 `shared` 日志**——多副本时能从日志看出「同一 IP 在不同进程各打了一次」，这是迁移信号
+
+这三条进 Stage 3 的验收项。现在不做多副本，但也不把路堵死。
+
 ## 已知局限
 
 - 缓存、CDN、限流全未实现（Stage 3 / 5）
 - 无监控（Stage 5）
-- htmx 是否引入推迟到 Stage 4 决定
+- 图表方案推迟到 Stage 4 决定（内联 JSON + uPlot 优先）
 
 ## 对后续 Stage 的影响
 
 - `Source` 接口定型后，Stage 2 的 6 个 adapter 全部按此实现
 - `observations` 表结构决定 Stage 3 的缓存 key 与 Stage 6 的历史对比
-- `/static/` 前缀约束意味着 Stage 4 引入 htmx 时，必须放 `web/static/` 并走哈希命名
+- `/static/` 前缀约束意味着 Stage 4 引入的 uPlot/htmx 必须放 `web/static/` 并走哈希命名
 - Taskfile 收敛后，Stage 5 的部署脚本也走 `task`，不另起一套

@@ -13,6 +13,7 @@ RDD 框架入口：`AGENTS.md`（AI Agent）、`CLAUDE.md`（Claude Code）。�
 | [stage-roadmap](docs/stages/stage-roadmap.md) | 路线图与 Stage 状态 |
 | [stage-0](docs/stages/stage-0.md) | Stage 0：技术框架定型 |
 | [stage-1](docs/stages/stage-1.md) | Stage 1：分歧验证 |
+| [stage-3](docs/stages/stage-3.md) | Stage 3：查询编排与缓存 |
 | [01-charter](docs/01-charter.md) | 项目章程 |
 | [02-engineering-principles](docs/02-engineering-principles.md) | 工程原则 |
 | [11-next-steps](docs/11-next-steps.md) | 下一步 |
